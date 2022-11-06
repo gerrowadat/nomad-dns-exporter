@@ -15,7 +15,7 @@ async def udp_server(ip, port):
 
     while True:
         (data, remote) = await udp_stream.recv()
-        rep = resolve_nomad(ARGS.nomad_server, data)
+        rep = resolve_nomad(ARGS.nomad_server, data, remote)
         await udp_stream.send(rep.pack(), remote)
 
 
@@ -37,7 +37,7 @@ async def main():
     await asyncio.gather(udps)
 
 
-def resolve_nomad(nomad_server, dns_req):
+def resolve_nomad(nomad_server, dns_req, remote):
     req = dnslib.DNSRecord.parse(dns_req)
     rep = dnslib.DNSRecord(dnslib.DNSHeader(
                            id=req.header.id,
@@ -50,8 +50,8 @@ def resolve_nomad(nomad_server, dns_req):
 
     if not query.endswith(ARGS.nomad_domain):
         logging.warning(
-            'NXDOMAIN (outside %s domain) for %s' % (
-                ARGS.nomad_domain, query))
+            '[%s] NXDOMAIN (outside %s domain) for %s' % (
+                remote_addr, ARGS.nomad_domain, query))
         return rep
 
     n = nomad.Nomad(host=nomad_server)
@@ -62,7 +62,7 @@ def resolve_nomad(nomad_server, dns_req):
     svc_query = query[:(len(query) - len(ARGS.nomad_domain))]
 
     if svc_query not in all_job_names:
-        logging.warning('NXDOMAIN for %s' % (svc_query))
+        logging.warning('[%s] NXDOMAIN for %s' % (remote_addr, svc_query))
         return rep
 
     job_allocs = [a for a in all_allocs
@@ -72,7 +72,7 @@ def resolve_nomad(nomad_server, dns_req):
     for alloc in job_allocs:
         node = n.node.get_node(alloc['NodeID'])
         ips.append(node['Attributes']['unique.network.ip-address'])
-    logging.info('%s: %s' % (query, ips))
+    logging.info('[%s] Resolved %s to %s' % (remote_addr, query, ips))
     for ip in ips:
         rep.add_answer(
                        dnslib.RR(
