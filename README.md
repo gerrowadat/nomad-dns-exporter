@@ -10,6 +10,8 @@ Build the docker container(s) with buildandpush.sh to your own registry (or use 
 
 Modify and use nomad-dns-exporter.hcl to run your nomad job. I'm lazy and run it as a system job, and point bind at a subset of my nomad clients. You can do something smarter ifyalike.
 
+In particular, make sure NOMAD_HOST is pointed at an actual address for a nomad client in your cluster. I get away with using the current client's hostname because I run a client and a server everywhere on my small homelab, YMMV.
+
 In bind, add this to your nomad.conf.local:
 
 ```
