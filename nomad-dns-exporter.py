@@ -66,19 +66,14 @@ def resolve_nomad(nomad_server, dns_req, remote_addr):
         return rep
 
     job_allocs = [a for a in all_allocs
-                  if a['ClientStatus'] == 'running' and
-                  a['JobID'] == svc_query]
+                  if a['ClientStatus'] == 'running' and a['JobID'] == svc_query]
     ips = []
     for alloc in job_allocs:
         node = n.node.get_node(alloc['NodeID'])
         ips.append(node['Attributes']['unique.network.ip-address'])
     logging.info('[%s] Resolved %s to %s' % (remote_addr[0], query, ips))
     for ip in ips:
-        rep.add_answer(
-                       dnslib.RR(
-                           str(req.q.qname),
-                           rdata=dnslib.A(ip),
-                           ttl=ARGS.dns_ttl))
+        rep.add_answer(dnslib.RR(str(req.q.qname), rdata=dnslib.A(ip), ttl=ARGS.dns_ttl))
     return rep
 
 

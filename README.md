@@ -1,3 +1,4 @@
+[![Flake8 linter Actions Status](https://github.com/gerrowadat/nomad-dns-exporter/workflows/Flake8%20linter/badge.svg)](https://github.com/gerrowadat/nomad-dns-exporter/actions)
 # nomad-dns-exporter
 Simple and Dirty Service DNS export for nomad services.
 
