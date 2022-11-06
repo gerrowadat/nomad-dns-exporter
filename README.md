@@ -1,7 +1,7 @@
 # nomad-dns-exporter
 Simple and Dirty Service DNS export for nomad services.
 
-My only real use case for this is to eliminate my need fof consul for service DNS (which is all I really use it for).
+My only real use case for this is to eliminate my need for consul for service DNS (which is all I really use it for).
 
 Instructions for use:
 ---------------------
@@ -12,7 +12,7 @@ Modify and use nomad-dns-exporter.hcl to run your nomad job. I'm lazy and run it
 
 In particular, make sure NOMAD_HOST is pointed at an actual address for a nomad client in your cluster. I get away with using the current client's hostname because I run a client and a server everywhere on my small homelab, YMMV.
 
-In bind, add this to your nomad.conf.local:
+In bind, add this to your named.conf.local:
 
 ```
 zone "nomad" {
