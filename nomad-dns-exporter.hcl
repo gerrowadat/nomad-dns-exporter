@@ -1,4 +1,5 @@
 job "nomad-dns-exporter" {
+  type = "system"
   datacenters = ["home"]
   group "nomad-dns-exporter_servers" {
     task "nomad-dns-exporter_server" {
@@ -15,7 +16,7 @@ job "nomad-dns-exporter" {
         ports = ["nomad-dns-exporter"]
       }
       env {
-        NOMAD_SERVER = "localhost"
+        NOMAD_SERVER = "${attr.unique.hostname}"
         DNS_PORT = "5333"
       }
     }
