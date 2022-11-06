@@ -1,2 +1,3 @@
 dnslib
 asyncio_dgram
+python-nomad
