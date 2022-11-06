@@ -37,7 +37,7 @@ async def main():
     await asyncio.gather(udps)
 
 
-def resolve_nomad(nomad_server, dns_req, remote):
+def resolve_nomad(nomad_server, dns_req, remote_addr):
     req = dnslib.DNSRecord.parse(dns_req)
     rep = dnslib.DNSRecord(dnslib.DNSHeader(
                            id=req.header.id,
