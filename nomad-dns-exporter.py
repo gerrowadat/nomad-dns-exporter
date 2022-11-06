@@ -51,7 +51,7 @@ def resolve_nomad(nomad_server, dns_req, remote_addr):
     if not query.endswith(ARGS.nomad_domain):
         logging.warning(
             '[%s] NXDOMAIN (outside %s domain) for %s' % (
-                remote_addr, ARGS.nomad_domain, query))
+                remote_addr[0], ARGS.nomad_domain, query))
         return rep
 
     n = nomad.Nomad(host=nomad_server)
@@ -62,7 +62,7 @@ def resolve_nomad(nomad_server, dns_req, remote_addr):
     svc_query = query[:(len(query) - len(ARGS.nomad_domain))]
 
     if svc_query not in all_job_names:
-        logging.warning('[%s] NXDOMAIN for %s' % (remote_addr, svc_query))
+        logging.warning('[%s] NXDOMAIN for %s' % (remote_addr[0], svc_query))
         return rep
 
     job_allocs = [a for a in all_allocs
@@ -72,7 +72,7 @@ def resolve_nomad(nomad_server, dns_req, remote_addr):
     for alloc in job_allocs:
         node = n.node.get_node(alloc['NodeID'])
         ips.append(node['Attributes']['unique.network.ip-address'])
-    logging.info('[%s] Resolved %s to %s' % (remote_addr, query, ips))
+    logging.info('[%s] Resolved %s to %s' % (remote_addr[0], query, ips))
     for ip in ips:
         rep.add_answer(
                        dnslib.RR(
