@@ -1,80 +1,147 @@
+import time
 import nomad
-import asyncio
-import asyncio_dgram
 import dnslib
-import logging
-import argparse
+import threading
+from absl import app
+from absl import flags
+from absl import logging
+from dnslib.server import DNSServer
+from dnslib.server import DNSLogger
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string('nomad_server', 'hedwig', 'nomad server to talk to')
+flags.DEFINE_integer('dns_port', 5333, 'port to serve DNS queries on')
+flags.DEFINE_integer('dns_ttl_secs', 3600, 'DNS TTL')
+flags.DEFINE_string('nomad_domain', '.service.nomad',
+                    'domain to answer queries within')
+flags.DEFINE_integer('nomad_jobinfo_update_interval_secs',
+                     30,
+                     'number of seconds between nomad jobinfo scrapes')
 
 
-ARGS = None
+class JobsInfo(object):
+    def __init__(self):
+        self._jobs = {}
+
+    def __str__(self):
+        return '\n'.join(['[%s]: %s' % (x, self._jobs[x]) for x in self._jobs])
+
+    def get_job(self, jobname):
+        return self._jobs.get(jobname) or []
+
+    def add_alloc(self, jobname, nodename):
+        if jobname in self._jobs:
+            self._jobs[jobname].append(nodename)
+        else:
+            self._jobs[jobname] = [nodename]
 
 
-async def udp_server(ip, port):
-    logging.debug('Binding to %s UDP port %d' % (ip, port))
-    udp_stream = await asyncio_dgram.bind((ip, port))
+class JobsInfoThread(threading.Thread):
+    def __init__(self):
 
-    while True:
-        (data, remote) = await udp_stream.recv()
-        rep = resolve_nomad(ARGS.nomad_server, data, remote)
-        await udp_stream.send(rep.pack(), remote)
+        self._j = JobsInfo()
+        self._jl = threading.RLock()
+
+        # lock for nomad client (initialised in run())
+        self._nl = threading.RLock()
+
+        # dict { nodename: IP }
+        self._nodes = {}
+        self._nodes_lock = threading.RLock()
+
+        threading.Thread.__init__(self)
+
+    def lookup_job(self, jobname):
+        with self._jl:
+            return self._j.get_job(jobname)
+
+    def run(self):
+        with self._nl:
+            self._n = nomad.Nomad(host=FLAGS.nomad_server)
+        while True:
+            # Rebuild our list of nodes
+            # (probably overkill, but also probably cheap).
+            with self._nodes_lock:
+                nodes = self._n.nodes.get_nodes()
+                new_nodes = {}
+                for n in nodes:
+                    new_nodes[n['Name']] = n['Address']
+                self._nodes = new_nodes
+
+            new_ji = JobsInfo()
+            for j in self._n.jobs:
+                jobname = j['ID']
+                allocs = self._n.job.get_allocations(jobname)
+                live_allocs = \
+                    [x for x in allocs if x['ClientStatus'] == 'running']
+                if len(live_allocs) > 0:
+                    logging.info('%s has %s allocations' % (
+                        jobname, len(live_allocs)))
+                for alloc in live_allocs:
+                    logging.info('Job %s is %s on %s' % (jobname,
+                                                         alloc['ClientStatus'],
+                                                         alloc['NodeName']))
+                    if alloc['NodeName'] not in self._nodes:
+                        logging.warning(
+                            'Job %s running on unknown nde %s, skipping' % (
+                                jobname, alloc['NodeName']))
+                    else:
+                        new_ji.add_alloc(jobname,
+                                         self._nodes[alloc['NodeName']])
+                with self._jl:
+                    self._j = new_ji
+            time.sleep(FLAGS.nomad_jobinfo_update_interval_secs)
 
 
-async def main():
-    p = argparse.ArgumentParser()
-    p.add_argument('--nomad_server', dest='nomad_server',
-                   type=str, default='hedwig')
-    p.add_argument('--dns_port', dest='dns_port', type=int,
-                   default=5333)
-    p.add_argument('--dns_ttl', dest='dns_ttl', type=int,
-                   default=3600)
-    p.add_argument('--nomad_domain', dest='nomad_domain', type=str,
-                   default='.service.nomad')
-    args = p.parse_args()
-    global ARGS
-    ARGS = args
+class NomadResolver(object):
+    def __init__(self, job_info_thread):
+        self._ji = job_info_thread
 
-    udps = udp_server('0.0.0.0', args.dns_port)
-    await asyncio.gather(udps)
+    def resolve(self, req, handler):
+        rep = req.reply()
 
+        query = str(req.q.qname)[:-1]
 
-def resolve_nomad(nomad_server, dns_req, remote_addr):
-    req = dnslib.DNSRecord.parse(dns_req)
-    rep = dnslib.DNSRecord(dnslib.DNSHeader(
-                           id=req.header.id,
-                           qr=1,
-                           aa=1,
-                           ra=1),
-                           q=req.q)
+        if not query.endswith(FLAGS.nomad_domain):
+            logging.warning(
+                'NXDOMAIN (outside %s domain) for %s' % (
+                    FLAGS.nomad_domain, query))
+            return rep
 
-    query = str(req.q.qname)[:-1]
+        # Strip the nomad domain off the query.
+        svc_query = query[:(len(query) - len(FLAGS.nomad_domain))]
 
-    if not query.endswith(ARGS.nomad_domain):
-        logging.warning(
-            '[%s] NXDOMAIN (outside %s domain) for %s' % (
-                remote_addr[0], ARGS.nomad_domain, query))
+        allocs = self._ji.lookup_job(svc_query)
+
+        if len(allocs) == 0:
+            return rep
+
+        for alloc_ip in allocs:
+            rep.add_answer(dnslib.RR(
+                                     str(req.q.qname),
+                                     rdata=dnslib.A(alloc_ip),
+                                     ttl=FLAGS.dns_ttl_secs))
         return rep
 
-    n = nomad.Nomad(host=nomad_server)
-    all_job_names = [j['Name'] for j in n.jobs.get_jobs()]
-    all_allocs = n.allocations.get_allocations()
 
-    # Strip the nomad domain off the query.
-    svc_query = query[:(len(query) - len(ARGS.nomad_domain))]
+def main(argv):
+    jut = JobsInfoThread()
+    jut.start()
 
-    if svc_query not in all_job_names:
-        logging.warning('[%s] NXDOMAIN for %s' % (remote_addr[0], svc_query))
-        return rep
+    resolver = NomadResolver(jut)
 
-    job_allocs = [a for a in all_allocs
-                  if a['ClientStatus'] == 'running' and a['JobID'] == svc_query]
-    ips = []
-    for alloc in job_allocs:
-        node = n.node.get_node(alloc['NodeID'])
-        ips.append(node['Attributes']['unique.network.ip-address'])
-    logging.info('[%s] Resolved %s to %s' % (remote_addr[0], query, ips))
-    for ip in ips:
-        rep.add_answer(dnslib.RR(str(req.q.qname), rdata=dnslib.A(ip), ttl=ARGS.dns_ttl))
-    return rep
+    dns_logger = DNSLogger()
+
+    logging.info('Starting DNS server on port %d' % (FLAGS.dns_port))
+    dns_server = DNSServer(resolver,
+                           port=FLAGS.dns_port,
+                           address='localhost',
+                           logger=dns_logger)
+    dns_server.start_thread()
+
+    jut.join()
 
 
-asyncio.run(main())
+if __name__ == '__main__':
+    app.run(main)
