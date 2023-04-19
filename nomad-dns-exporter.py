@@ -11,6 +11,7 @@ from dnslib.server import DNSLogger
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('nomad_server', 'localhost', 'nomad server to talk to')
+flags.DEFINE_string('dns_hostname', 'localhost', 'address to serve dns on')
 flags.DEFINE_integer('dns_port', 5333, 'port to serve DNS queries on')
 flags.DEFINE_integer('dns_ttl_secs', 3600, 'DNS TTL')
 flags.DEFINE_string('nomad_domain', '.service.nomad',
@@ -57,6 +58,7 @@ class JobsInfoThread(threading.Thread):
         threading.Thread.__init__(self)
 
     def lookup_job(self, jobname):
+        logging.info('asking for jl in lookup_job')
         with self._jl:
             return self._j.get_job(jobname)
 
@@ -145,7 +147,7 @@ def main(argv):
     logging.info('Starting DNS server on port %d' % (FLAGS.dns_port))
     dns_server = DNSServer(resolver,
                            port=FLAGS.dns_port,
-                           address='localhost',
+                           address=FLAGS.dns_hostname,
                            logger=dns_logger)
     dns_server.start_thread()
 
