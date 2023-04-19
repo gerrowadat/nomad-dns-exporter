@@ -10,7 +10,7 @@ from dnslib.server import DNSLogger
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('nomad_server', 'hedwig', 'nomad server to talk to')
+flags.DEFINE_string('nomad_server', 'localhost', 'nomad server to talk to')
 flags.DEFINE_integer('dns_port', 5333, 'port to serve DNS queries on')
 flags.DEFINE_integer('dns_ttl_secs', 3600, 'DNS TTL')
 flags.DEFINE_string('nomad_domain', '.service.nomad',
