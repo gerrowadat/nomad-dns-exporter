@@ -58,7 +58,6 @@ class JobsInfoThread(threading.Thread):
         threading.Thread.__init__(self)
 
     def lookup_job(self, jobname):
-        logging.info('asking for jl in lookup_job')
         with self._jl:
             return self._j.get_job(jobname)
 
