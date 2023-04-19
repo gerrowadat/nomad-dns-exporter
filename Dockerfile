@@ -10,6 +10,8 @@ WORKDIR /nomad-dns-exporter
 
 # The nomad server to talk to (localhost if you're just runing this on servers)
 ENV NOMAD_SERVER "localhost"
+# Address to serve DNS on.
+ENV DNS_HOSTNAME "localhost"
 # POrt to answerr DNS queries on (don't use 53, probably).
 ENV DNS_PORT "5333"
 # That thing.
