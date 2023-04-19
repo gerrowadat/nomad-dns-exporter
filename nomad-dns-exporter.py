@@ -27,6 +27,10 @@ class JobsInfo(object):
     def __str__(self):
         return '\n'.join(['[%s]: %s' % (x, self._jobs[x]) for x in self._jobs])
 
+    @property
+    def jobnames(self):
+        return list(self._jobs.keys())
+
     def get_job(self, jobname):
         return self._jobs.get(jobname) or []
 
@@ -75,13 +79,7 @@ class JobsInfoThread(threading.Thread):
                 allocs = self._n.job.get_allocations(jobname)
                 live_allocs = \
                     [x for x in allocs if x['ClientStatus'] == 'running']
-                if len(live_allocs) > 0:
-                    logging.info('%s has %s allocations' % (
-                        jobname, len(live_allocs)))
                 for alloc in live_allocs:
-                    logging.info('Job %s is %s on %s' % (jobname,
-                                                         alloc['ClientStatus'],
-                                                         alloc['NodeName']))
                     if alloc['NodeName'] not in self._nodes:
                         logging.warning(
                             'Job %s running on unknown nde %s, skipping' % (
@@ -89,8 +87,19 @@ class JobsInfoThread(threading.Thread):
                     else:
                         new_ji.add_alloc(jobname,
                                          self._nodes[alloc['NodeName']])
-                with self._jl:
-                    self._j = new_ji
+
+            with self._jl:
+                for j in set(self._j.jobnames + new_ji.jobnames):
+                    old_loc = self._j.get_job(j)
+                    new_loc = new_ji.get_job(j)
+                    if new_loc == []:
+                        new_loc = '*poof*'
+                    if old_loc == []:
+                        old_loc = '<absent>'
+                    if new_loc != old_loc:
+                        logging.info('[%s] %s -> %s', j, old_loc, new_loc)
+                self._j = new_ji
+
             time.sleep(FLAGS.nomad_jobinfo_update_interval_secs)
 
 
