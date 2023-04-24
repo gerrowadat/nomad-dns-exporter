@@ -19,7 +19,7 @@ flags.DEFINE_integer('dns_port', 5333, 'port to serve DNS queries on')
 flags.DEFINE_string('http_hostname', 'localhost', 'address to serve http on')
 flags.DEFINE_integer('http_port', 5334, 'port to serve http on')
 flags.DEFINE_integer('dns_ttl_secs', 3600, 'DNS TTL')
-flags.DEFINE_string('nomad_domain', '.service.nomad',
+flags.DEFINE_string('nomad_domain', '.job.nomad',
                     'domain to answer queries within')
 flags.DEFINE_integer('nomad_jobinfo_update_interval_secs',
                      30,
