@@ -1,3 +1,5 @@
 dnslib
+cherrypy
 python-nomad
 absl-py
+prometheus-client

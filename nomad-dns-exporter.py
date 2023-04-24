@@ -1,24 +1,33 @@
 import time
 import nomad
 import dnslib
+import cherrypy
 import threading
+import prometheus_client
 from absl import app
 from absl import flags
 from absl import logging
 from dnslib.server import DNSServer
 from dnslib.server import DNSLogger
 
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('nomad_server', 'localhost', 'nomad server to talk to')
 flags.DEFINE_string('dns_hostname', 'localhost', 'address to serve dns on')
 flags.DEFINE_integer('dns_port', 5333, 'port to serve DNS queries on')
+flags.DEFINE_string('http_hostname', 'localhost', 'address to serve http on')
+flags.DEFINE_integer('http_port', 5334, 'port to serve http on')
 flags.DEFINE_integer('dns_ttl_secs', 3600, 'DNS TTL')
 flags.DEFINE_string('nomad_domain', '.service.nomad',
                     'domain to answer queries within')
 flags.DEFINE_integer('nomad_jobinfo_update_interval_secs',
                      30,
                      'number of seconds between nomad jobinfo scrapes')
+
+
+RESOLVE_TIME = prometheus_client.Summary(
+    'resolve_time_seconds', 'Time spent resolving job names')
 
 
 class JobsInfo(object):
@@ -43,8 +52,9 @@ class JobsInfo(object):
 
 
 class JobsInfoThread(threading.Thread):
-    def __init__(self):
+    def __init__(self, metrics):
 
+        self._m = metrics
         self._j = JobsInfo()
         self._jl = threading.RLock()
 
@@ -99,21 +109,26 @@ class JobsInfoThread(threading.Thread):
                         old_loc = '<absent>'
                     if new_loc != old_loc:
                         logging.info('[%s] %s -> %s', j, old_loc, new_loc)
+                self._m['jobinfo_updated'].set_to_current_time()
                 self._j = new_ji
 
             time.sleep(FLAGS.nomad_jobinfo_update_interval_secs)
 
 
 class NomadResolver(object):
-    def __init__(self, job_info_thread):
+    def __init__(self, job_info_thread, metrics):
         self._ji = job_info_thread
+        self._m = metrics
 
+    @RESOLVE_TIME.time()
     def resolve(self, req, handler):
+        self._m['all_dns_requests_count'].inc()
         rep = req.reply()
 
         query = str(req.q.qname)[:-1]
 
         if not query.endswith(FLAGS.nomad_domain):
+            self._m['all_dns_nxdomain_count'].inc()
             logging.warning(
                 'NXDOMAIN (outside %s domain) for %s' % (
                     FLAGS.nomad_domain, query))
@@ -125,6 +140,7 @@ class NomadResolver(object):
         allocs = self._ji.lookup_job(svc_query)
 
         if len(allocs) == 0:
+            self._m['all_dns_nxdomain_count'].inc()
             return rep
 
         for alloc_ip in allocs:
@@ -132,14 +148,42 @@ class NomadResolver(object):
                                      str(req.q.qname),
                                      rdata=dnslib.A(alloc_ip),
                                      ttl=FLAGS.dns_ttl_secs))
+        self._m['all_dns_success_count'].inc()
         return rep
 
 
+class WebServer(object):
+    def __init__(self, metrics):
+        self._m = metrics
+
+    @cherrypy.expose
+    def index(self):
+        return '<a href="/metrics">metrics</a>'
+
+    @cherrypy.expose
+    def metrics(self):
+        return prometheus_client.generate_latest()
+
+
 def main(argv):
-    jut = JobsInfoThread()
+
+    metrics = {}
+    metrics['jobinfo_updated'] = prometheus_client.Gauge(
+        'jobinfo_updated', 'last update of job info')
+    metrics['all_dns_requests_count'] = prometheus_client.Counter(
+        'all_dns_requests_count', 'count of all dns requests')
+    metrics['all_dns_success_count'] = prometheus_client.Counter(
+        'all_dns_success_count', 'all successfully answered dns requests')
+    metrics['all_dns_nxdomain_count'] = prometheus_client.Counter(
+        'all_dns_nxdomain_count', 'all unfound dns requests')
+    cherrypy.config.update(
+        {'server.socket_host': FLAGS.http_hostname,
+         'server.socket_port': FLAGS.http_port})
+
+    jut = JobsInfoThread(metrics)
     jut.start()
 
-    resolver = NomadResolver(jut)
+    resolver = NomadResolver(jut, metrics)
 
     dns_logger = DNSLogger()
 
@@ -150,7 +194,7 @@ def main(argv):
                            logger=dns_logger)
     dns_server.start_thread()
 
-    jut.join()
+    cherrypy.quickstart(WebServer(metrics), '/')
 
 
 if __name__ == '__main__':
