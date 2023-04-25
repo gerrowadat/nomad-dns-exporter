@@ -12,8 +12,12 @@ WORKDIR /nomad-dns-exporter
 ENV NOMAD_SERVER "localhost"
 # Address to serve DNS on.
 ENV DNS_HOSTNAME "localhost"
-# POrt to answerr DNS queries on (don't use 53, probably).
+# Address to serve HTTP on
+ENV HTTP_HOSTNAME "localhost"
+# Port to answerr DNS queries on (don't use 53, probably).
 ENV DNS_PORT "5333"
+# Port to answer HTTP on
+ENV HTTP_PORT "5334"
 # That thing.
 ENV DNS_TTL "3600"
 # The trailing domain name to answer queries for, i.e. myservice.service.nomad

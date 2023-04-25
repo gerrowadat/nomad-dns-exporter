@@ -25,6 +25,6 @@ zone "nomad" {
 };
 ```
 
-At this point, your named should be able to resolve *jobname*.service.nomad direcly, and you cn use this to discover where jobs are in your cluster. Ta-da!
+At this point, your named should be able to resolve *jobname*.job.nomad direcly, and you can use this to discover where jobs are in your cluster. Ta-da!
 
 Check the issues for things I still think are missing and may or may not get to. Patches and offers to do this properly welcome.
