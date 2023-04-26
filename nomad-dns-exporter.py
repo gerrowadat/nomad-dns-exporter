@@ -127,6 +127,11 @@ class NomadResolver(object):
 
         query = str(req.q.qname)[:-1]
 
+        if req.q.qtype != dnslib.QTYPE.A:
+            logging.warning('Not able to answer %s query for %s' % (
+                dnslib.QTYPE.get(req.q.qtype), query))
+            return rep
+
         if not query.endswith(FLAGS.nomad_domain):
             self._m['all_dns_nxdomain_count'].inc()
             logging.warning(
