@@ -130,6 +130,7 @@ class NomadResolver(object):
         if req.q.qtype != dnslib.QTYPE.A:
             logging.warning('Not able to answer %s query for %s' % (
                 dnslib.QTYPE.get(req.q.qtype), query))
+            rep.header.rcode = dnslib.RCODE.NXDOMAIN
             return rep
 
         if not query.endswith(FLAGS.nomad_domain):
